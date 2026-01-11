@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyLabBuddy - Multi-Test Booking System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .glass-morphism {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e2e8f0;
+            border-radius: 10px;
+        }
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3b82f6;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-5xl mx-auto">
+        <!-- Header -->
+        <header class="mb-10 text-center">
+            <h1 class="text-3xl font-bold text-slate-800 tracking-tight">My Lab Buddy</h1>
+            <p class="text-slate-500 mt-2">Book multiple tests across different labs seamlessly.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Selection Panel -->
+            <div class="lg:col-span-2 space-y-6">
+                <div class="glass-morphism rounded-2xl p-6 shadow-sm">
+                    <h2 class="text-lg font-semibold mb-4 text-slate-700">Available Tests</h2>
+                    
+                    <div id="labs-container" class="space-y-8">
+                        <!-- Labs and Tests will be injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Booking Summary Panel -->
+            <div class="lg:col-span-1">
+                <div class="glass-morphism rounded-2xl p-6 shadow-sm sticky top-8 border border-blue-100">
+                    <h2 class="text-lg font-semibold mb-4 text-slate-700">Booking Summary</h2>
+                    
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-slate-600 mb-1">Patient Name</label>
+                        <input type="text" id="patientName" placeholder="Enter full name" 
+                            class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    </div>
+
+                    <div id="selected-list" class="space-y-3 mb-6 max-h-[40vh] overflow-y-auto custom-scrollbar">
+                        <!-- Selection empty state -->
+                        <p id="empty-msg" class="text-slate-400 text-sm italic text-center py-4">No tests selected yet.</p>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-100">
+                        <div class="flex justify-between mb-4">
+                            <span class="text-slate-600 font-medium">Total Items:</span>
+                            <span id="total-count" class="text-slate-900 font-bold">0</span>
+                        </div>
+                        
+                        <button id="book-btn" disabled
+                            class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-200 flex justify-center items-center gap-2">
+                            <span>Confirm & Book</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 transform translate-y-20 opacity-0 transition-all duration-300 px-6 py-3 rounded-full bg-slate-800 text-white shadow-2xl z-50">
+        Message here
+    </div>
+
+    <script>
+        // CONFIGURATION: Replace this URL with your published Google Apps Script Web App URL
+        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwwXAlSFR7Q06hF3MQaG8RKzTplku7L5HzQlvk3f_nR-7NP2UOjqnyCzk_Zvq5ho15k/exec";
+
+        // Mock Data for Labs and Tests
+        const labData = [
+            {
+                labName: "PRL Diagnostics",
+                location: "Delhi",
+                tests: [
+                    { id: "cd1", name: "Complete Blood Count (CBC)", price: 450 },
+                    { id: "cd2", name: "Lipid Profile", price: 600 },
+                    { id: "cd3", name: "Thyroid Profile (T3, T4, TSH)", price: 800 }
+                ]
+            },
+            {
+                labName: "Lal Pathlabs",
+                location: "Noida",
+                tests: [
+                    { id: "am1", name: "Vitamin D3 Check", price: 1200 },
+                    { id: "am2", name: "HbA1c (Diabetes)", price: 500 },
+                    { id: "am3", name: "Liver Function Test (LFT)", price: 750 }
+                ]
+            },
+            {
+                labName: "Redcliffe Laboratories",
+                location: "Gurugram",
+                tests: [
+                    { id: "rp1", name: "Urine Analysis", price: 100 },
+                    { id: "rp2", name: "Kidney Function Test (KFT)", price: 900 }
+                ]
+            }
+        ];
+
+        let selectedTests = [];
+
+        // UI Initializer
+        function init() {
+            renderLabs();
+            updateUI();
+        }
+
+        function renderLabs() {
+            const container = document.getElementById('labs-container');
+            container.innerHTML = labData.map(lab => `
+                <div>
+                    <div class="flex items-center gap-2 mb-3">
+                        <div class="w-2 h-6 bg-blue-500 rounded-full"></div>
+                        <h3 class="font-bold text-slate-800">${lab.labName} <span class="text-xs font-normal text-slate-400 ml-2">(${lab.location})</span></h3>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${lab.tests.map(test => `
+                            <button onclick="toggleTest('${lab.labName}', '${test.id}', '${test.name}', ${test.price})" 
+                                id="btn-${test.id}"
+                                class="flex justify-between items-center p-4 rounded-xl border-2 border-slate-100 hover:border-blue-200 bg-white transition-all text-left group">
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-700 group-hover:text-blue-600">${test.name}</p>
+                                    <p class="text-xs text-slate-400 mt-1">₹${test.price}</p>
+                                </div>
+                                <div class="icon-state text-slate-300 group-hover:text-blue-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                    </svg>
+                                </div>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleTest(labName, testId, testName, price) {
+            const index = selectedTests.findIndex(t => t.testId === testId);
+            const btn = document.getElementById(`btn-${testId}`);
+
+            if (index === -1) {
+                selectedTests.push({ labName, testId, testName, price });
+                btn.classList.add('border-blue-500', 'bg-blue-50');
+                btn.querySelector('.icon-state').innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>`;
+            } else {
+                selectedTests.splice(index, 1);
+                btn.classList.remove('border-blue-500', 'bg-blue-50');
+                btn.querySelector('.icon-state').innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>`;
+            }
+            updateUI();
+        }
+
+        function updateUI() {
+            const list = document.getElementById('selected-list');
+            const emptyMsg = document.getElementById('empty-msg');
+            const bookBtn = document.getElementById('book-btn');
+            const totalCount = document.getElementById('total-count');
+
+            totalCount.innerText = selectedTests.length;
+
+            if (selectedTests.length === 0) {
+                list.innerHTML = '';
+                list.appendChild(emptyMsg);
+                bookBtn.disabled = true;
+            } else {
+                emptyMsg.remove();
+                bookBtn.disabled = false;
+                list.innerHTML = selectedTests.map(test => `
+                    <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg animate-in fade-in slide-in-from-right-2 duration-300">
+                        <div class="overflow-hidden mr-2">
+                            <p class="text-xs font-bold text-blue-600 uppercase tracking-tighter">${test.labName}</p>
+                            <p class="text-sm text-slate-700 truncate">${test.testName}</p>
+                        </div>
+                        <button onclick="toggleTest('${test.labName}', '${test.testId}', '${test.testName}', ${test.price})" class="text-slate-400 hover:text-red-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.className = `fixed bottom-8 left-1/2 -translate-x-1/2 transform transition-all duration-300 px-6 py-3 rounded-full text-white shadow-2xl z-50 ${isError ? 'bg-red-500' : 'bg-slate-800'}`;
+            toast.style.opacity = '1';
+            toast.style.transform = 'translate(-50%, 0)';
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translate(-50%, 20px)';
+            }, 3000);
+        }
+
+        async function submitBooking() {
+            const patientName = document.getElementById('patientName').value.trim();
+            const bookBtn = document.getElementById('book-btn');
+
+            if (!patientName) {
+                showToast("Please enter patient name", true);
+                return;
+            }
+
+            if (APPS_SCRIPT_URL === "YOUR_APPS_SCRIPT_WEB_APP_URL") {
+                showToast("Please configure the Apps Script URL in the code.", true);
+                console.warn("Apps Script URL missing. Booking logic simulation only.");
+                return;
+            }
+
+            const originalBtnHtml = bookBtn.innerHTML;
+            bookBtn.disabled = true;
+            bookBtn.innerHTML = `<div class="loader"></div> Processing...`;
+
+            try {
+                // Loop through each test and post individually (as requested: each test in a different row)
+                const promises = selectedTests.map(test => {
+                    const data = {
+                        timestamp: new Date().toLocaleString(),
+                        patientName: patientName,
+                        labName: test.labName,
+                        testName: test.testName,
+                        price: test.price
+                    };
+
+                    return fetch(APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors', // Apps script requires no-cors for simple posts
+                        cache: 'no-cache',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                });
+
+                await Promise.all(promises);
+                
+                showToast("Successfully booked all tests!");
+                
+                // Reset State
+                selectedTests = [];
+                document.getElementById('patientName').value = '';
+                init(); // Refresh labs UI
+
+            } catch (error) {
+                console.error(error);
+                showToast("An error occurred during booking.", true);
+            } finally {
+                bookBtn.disabled = false;
+                bookBtn.innerHTML = originalBtnHtml;
+            }
+        }
+
+        document.getElementById('book-btn').addEventListener('click', submitBooking);
+
+        // Initialize on load
+        window.onload = init;
+
+        /* -------------------------------------------------------------
+        GOOGLE APPS SCRIPT CODE (Paste this in your Google Script)
+        -------------------------------------------------------------
+        
+        function doPost(e) {
+          try {
+            var ss = SpreadsheetApp.getActiveSpreadsheet();
+            var sheet = ss.getSheets()[0]; // Gets the first sheet
+            
+            // Parse incoming JSON data
+            var data = JSON.parse(e.postData.contents);
+            
+            // Append row: [Timestamp, Patient, Lab, Test, Price]
+            sheet.appendRow([
+              data.timestamp,
+              data.patientName,
+              data.labName,
+              data.testName,
+              data.price
+            ]);
+            
+            return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
+            
+          } catch (f) {
+            return ContentService.createTextOutput("Error: " + f.toString()).setMimeType(ContentService.MimeType.TEXT);
+          }
+        }
+
+        function doGet(e) {
+          return ContentService.createTextOutput("Web App is running. Use POST to submit data.");
+        }
+        
+        -------------------------------------------------------------
+        */
+    </script>
+</body>
+</html>
